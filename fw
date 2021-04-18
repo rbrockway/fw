@@ -1,0 +1,322 @@
+#!/bin/bash
+
+#
+# Firewall startup script
+#
+# Robert Brockway <robert@timetraveller.org>
+#
+# Originally written:	29/10/01
+# Last Updated:		30/03/02
+#
+# Version held in the file $CONFDIR/version
+#
+
+##########
+# Config #
+##########
+
+BASEDIR=/opt/fw
+CONFDIR=$BASEDIR/conf
+LOGDIR=/var/log/fw
+RULESETFILE=$CONFDIR/ruleset
+RULESET=`cat $RULESETFILE`
+PATH="/usr/bin:/bin:/usr/local/bin:/usr/sbin:/sbin:/usr/local/sbin"
+TIMEZONEFILE=/etc/timezone
+
+##################
+# Initialisation #
+##################
+
+# It's important (for logs) to do all times in system local time
+export TZ=`cat $TIMEZONEFILE`
+
+POLICY=$CONFDIR/$RULESET.policy
+RULES=$CONFDIR/$RULESET.rules
+DATELOGDIR=$LOGDIR/`date +%Y`/`date +%m`/`date +%d`
+TIMESTAMP=`date +%H%M%S`
+TABLES="nat filter"
+
+#########
+# block #
+#########
+
+block () {
+	policy DROP
+	}
+
+#############
+# copyright #
+#############
+
+copyright () {
+	echo
+	cat $CONFDIR/copyright
+	echo
+	}
+
+###############
+# defaultmesg #
+###############
+
+defaultmesg () {
+	echo "Type \"fw help\" for help"
+	echo
+	}
+
+##############
+# flushrules #
+##############
+
+flushrules () {
+	# Let's flush the firewall rules
+	echo
+	echo "Flushing firewall rules"
+	echo
+	for TABLE in $TABLES
+	do
+		iptables -t $TABLE -F
+	done
+	}
+
+########
+# help #
+########
+
+help() {
+	echo
+	cat $CONFDIR/help
+	echo
+	}
+
+#############
+# loadrules #
+#############
+
+loadrules () {
+	echo
+	echo "Loading firewall rules"
+	echo
+	bash $RULES
+	}
+
+##########
+# policy #
+##########
+
+policy () {
+	case "$1" in
+	STANDARD)
+		echo
+		echo "Reverting to standard policies"
+		echo
+		bash $POLICY
+		;;
+	*)
+		echo
+		echo "Setting default policy $1"
+		echo
+		for CHAIN in INPUT FORWARD OUTPUT
+		do
+			iptables -P $CHAIN $1
+		done
+		;;
+	esac;
+	}
+
+###############
+# showruleset #
+###############
+
+showruleset () {
+	echo
+	echo "Active ruleset:" $RULESET
+	echo
+	}
+
+#########
+# start #
+#########
+
+start () {
+	policy DROP
+	log
+	flushrules
+	policy STANDARD
+	loadrules
+	}
+
+########
+# stop #
+########
+
+stop () {
+	policy DROP
+	log
+	flushrules
+	policy ACCEPT
+	}
+
+#######
+# log #
+#######
+
+log () {
+	# How do we want the logs configured
+	CONF=" -n -x -L -Z -v"
+	LOGFILE=$DATELOGDIR/$TIMESTAMP
+        if [ ! -e $DATELOGDIR ]
+        then
+                mkdir -p $DATELOGDIR
+        fi
+	for TABLE in $TABLES
+	do
+		# Remove anything about zeroing a chain
+        	iptables -t $TABLE $CONF | grep -v Zeroing >> $LOGFILE
+	done
+        }
+
+##########
+# report #
+##########
+
+report () {
+	# Find all the files from a particular year, month,
+	# day, or period between iterations.
+	for I in `find $LOGDIR/$1 -type f`
+	do
+		cat $I
+	done
+	}
+
+###########
+# ruleset #
+###########
+
+ruleset () {
+	case "$1" in
+	"")
+		showruleset
+		;;
+	*)
+		echo
+		echo "Changing ruleset from $RULESET to $1"
+		echo
+		echo $1 > $RULESETFILE
+		;;
+	esac
+	}
+
+###########
+# unblock #
+###########
+
+unblock () {
+	# Set default policies
+	# Reversing a previous block
+	policy STANDARD
+	}
+
+########
+# list #
+########
+
+list () {
+	CONF="-L -v"
+	echo
+	echo "		**************************************"
+	echo "		*** Current firewall configuration ***"
+	echo "		**************************************"
+	echo
+	for TABLE in $TABLES
+	do
+        	echo
+        	echo "                  *** $TABLE table ***"
+        	echo
+        	iptables -t $TABLE $CONF | grep -v Zeroing
+	done
+	}
+
+###########
+# version #
+###########
+
+version () {
+	echo
+	cat $CONFDIR/version
+	echo
+	}
+
+########
+# zero #
+########
+
+zero ()
+	{
+	iptables -t nat -Z -v
+	iptables -t filter -Z -v
+	}
+
+########
+# Main #
+########
+
+case "$1" in
+block)
+	block
+	;;
+copyright)
+	copyright
+	;;
+down)
+	stop
+	;;
+help)
+	help
+	;;
+list)
+	list
+	;;
+load)
+	start
+	;;
+reload)
+	start
+	;;
+log)
+	log
+	;;
+report)
+	report $2
+	;;
+ruleset)
+	ruleset $2
+	;;
+shutdown)
+	shutdown
+	;;
+start)
+	start
+	;;
+stop)
+	stop
+	;;
+unblock)
+	unblock
+	;;
+unload)
+	stop
+	;;
+up)
+	start
+	;;
+version)
+	version
+	;;
+zero)
+	zero
+	;;
+*)
+	showruleset
+	defaultmesg
+	;;
+esac
